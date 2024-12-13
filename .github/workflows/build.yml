@@ -1,0 +1,101 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goarch: [amd64, arm64]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Build
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 1
+        run: |
+          go build -v -ldflags="-X 'main.VERSION=$(git describe --tags --always)'" -o "bin/blsfend-linux-${{ matrix.goarch }}" .
+          cd bin
+          tar czf "blsfend-linux-${{ matrix.goarch }}.tar.gz" "blsfend-linux-${{ matrix.goarch }}"
+          sha256sum "blsfend-linux-${{ matrix.goarch }}.tar.gz" > "blsfend-linux-${{ matrix.goarch }}.tar.gz.sha256"
+
+      - name: Run tests
+        if: matrix.goarch == 'amd64'
+        run: go test -v ./...
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: blsfend-linux-${{ matrix.goarch }}
+          path: |
+            bin/blsfend-linux-${{ matrix.goarch }}.tar.gz
+            bin/blsfend-linux-${{ matrix.goarch }}.tar.gz.sha256
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          cp */*.tar.gz release/
+          cp */*.sha256 release/
+          cd release
+          ls -la
+
+      - name: Generate release notes
+        run: |
+          echo "## BLSfend Release" > RELEASE_NOTES.md
+          echo "### Installation" >> RELEASE_NOTES.md
+          echo '```bash' >> RELEASE_NOTES.md
+          echo 'curl -sSL https://raw.githubusercontent.com/blstmo/blsfend/main/install.sh | sudo bash' >> RELEASE_NOTES.md
+          echo '```' >> RELEASE_NOTES.md
+          echo "### SHA256 Checksums" >> RELEASE_NOTES.md
+          echo '```' >> RELEASE_NOTES.md
+          cat release/*.sha256 >> RELEASE_NOTES.md
+          echo '```' >> RELEASE_NOTES.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release/*
+          body_path: RELEASE_NOTES.md
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  cleanup:
+    if: always()
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: geekyeggo/delete-artifact@v2
+        with:
+          name: "*"
