@@ -21,21 +21,44 @@ fi
 echo "Installing dependencies..."
 if command -v apt-get >/dev/null; then
     apt-get update
-    apt-get install -y sqlite3 qrencode curl
+    apt-get install -y sqlite3 qrencode curl tar
 elif command -v yum >/dev/null; then
-    yum install -y sqlite qrencode curl
+    yum install -y sqlite qrencode curl tar
 elif command -v pacman >/dev/null; then
-    pacman -Sy sqlite qrencode curl
+    pacman -Sy sqlite qrencode curl tar
 else
-    echo "Warning: Please install sqlite3, qrencode, and curl manually"
+    echo "Warning: Please install sqlite3, qrencode, curl, and tar manually"
     exit 1
 fi
 
 # Download and install binary
 echo "Downloading BLSfend..."
 LATEST=$(curl -s https://api.github.com/repos/blstmo/blsfend/releases/latest | grep "tag_name" | cut -d '"' -f 4)
-curl -L -o /usr/local/bin/blsfend "https://github.com/blstmo/blsfend/releases/download/${LATEST}/blsfend-linux-${ARCH}"
+DOWNLOAD_URL="https://github.com/blstmo/blsfend/releases/download/${LATEST}/blsfend-linux-${ARCH}.tar.gz"
+DOWNLOAD_SHA_URL="https://github.com/blstmo/blsfend/releases/download/${LATEST}/blsfend-linux-${ARCH}.tar.gz.sha256"
+
+# Verify checksum
+echo "Verifying download integrity..."
+curl -L -o blsfend.tar.gz "$DOWNLOAD_URL"
+curl -L -o blsfend.tar.gz.sha256 "$DOWNLOAD_SHA_URL"
+
+# Check SHA256 sum
+EXPECTED_SHA=$(cat blsfend.tar.gz.sha256 | awk '{print $1}')
+ACTUAL_SHA=$(sha256sum blsfend.tar.gz | awk '{print $1}')
+
+if [ "$EXPECTED_SHA" != "$ACTUAL_SHA" ]; then
+    echo "Error: Download integrity check failed"
+    rm blsfend.tar.gz blsfend.tar.gz.sha256
+    exit 1
+fi
+
+# Extract and install
+tar -xzf blsfend.tar.gz
+mv blsfend-linux-${ARCH} /usr/local/bin/blsfend
 chmod +x /usr/local/bin/blsfend
+
+# Clean up download files
+rm blsfend.tar.gz blsfend.tar.gz.sha256
 
 # Initialize
 echo -e "\nBLSfend Configuration"
