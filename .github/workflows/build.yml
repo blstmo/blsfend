@@ -24,6 +24,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu gcc libsqlite3-dev
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -36,6 +41,10 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 1
         run: |
+          if [ "${{ matrix.goarch }}" = "arm64" ]; then
+            export CC=aarch64-linux-gnu-gcc
+          fi
+          mkdir -p bin
           go build -v -ldflags="-X 'main.VERSION=$(git describe --tags --always)'" -o "bin/blsfend-linux-${{ matrix.goarch }}" .
           cd bin
           tar czf "blsfend-linux-${{ matrix.goarch }}.tar.gz" "blsfend-linux-${{ matrix.goarch }}"
